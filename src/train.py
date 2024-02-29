@@ -5,7 +5,7 @@ import torch.nn as nn
 import gymnasium as gym
 import random
 import numpy as np
-from tqdm import tqdm
+# from tqdm import tqdm
 from sklearn.ensemble import RandomForestRegressor
 from joblib import dump, load
 
@@ -359,12 +359,14 @@ def greedy_action(Q,s,nb_actions):
     return np.argmax(Qsa)
 
 gamma = .9
-nb_iter = 10000
+nb_iter = 100
 nb_actions = env.action_space.n
-nb_samples = 15000
+nb_samples = 10
 # print('Calculating Qfunctions...')
 # Qfunctions = rf_fqi(S, A, R, S2, D, max_episode, nb_actions, gamma)
 # print('Qfunctions...')
+
+### fqi2 : nb_iter=10000, nb_samples=15000
 
 class ProjectAgent:
 
