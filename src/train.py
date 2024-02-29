@@ -5,7 +5,7 @@ import torch.nn as nn
 import gymnasium as gym
 import random
 import numpy as np
-# from tqdm import tqdm
+from tqdm import tqdm # comment this line before pushing
 from sklearn.ensemble import RandomForestRegressor
 from joblib import dump, load
 
@@ -402,7 +402,7 @@ class ProjectAgent:
         dump(self.Qfunctions, path)
 
     def load(self):
-        self.Qfunctions = load("model_save_fqi")
+        self.Qfunctions = load("model_save_fqi_crashtest")
 
 ###################################################################################
 ###################################################################################
