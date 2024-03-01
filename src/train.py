@@ -326,6 +326,9 @@ def collect_samples(env, horizon, disable_tqdm=False, print_done_states=False):
     R = np.array(R)
     S2= np.array(S2)
     D = np.array(D)
+
+    # add a normalization step here for S and S2
+
     return S, A, R, S2, D
 
 def rf_fqi(S, A, R, S2, D, iterations, nb_actions, gamma, disable_tqdm=False):
@@ -358,7 +361,7 @@ def greedy_action(Q,s,nb_actions):
         Qsa.append(Q.predict(sa))
     return np.argmax(Qsa)
 
-gamma = .9
+gamma = 1
 nb_iter = 2000
 nb_actions = env.action_space.n
 nb_samples = 10000
@@ -369,6 +372,7 @@ nb_samples = 10000
 ### fqi2 : nb_iter=10000, nb_samples=15000
 ### fqi3 : nb_iter=7500, nb_samples=15000
 ### fqi4 : nb_iter=2000, nb_samples=10000
+### fqi5: fqi4 with gamma = 1 istead of .9
 
 class ProjectAgent:
 
@@ -404,7 +408,7 @@ class ProjectAgent:
         dump(self.Qfunctions, path)
 
     def load(self):
-        self.Qfunctions = load("model_save_fqi_4")
+        self.Qfunctions = load("model_save_fqi_5")
 
 ###################################################################################
 ###################################################################################
