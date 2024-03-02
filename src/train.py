@@ -328,8 +328,13 @@ def collect_samples(env, horizon, disable_tqdm=False, print_done_states=False):
     D = np.array(D)
 
     # add a normalization step here for S and S2
+    # mS = np.min(S, axis=0)
+    # MS = np.max(S, axis=0)
+    # S_normalized = (S - mS) / (MS - mS)
+    # S2_normalized = (S2 - mS) / (MS - mS)
 
     return S, A, R, S2, D
+    # return S_normalized, A, R, S2_normalized, D, mS, MS
 
 def rf_fqi(S, A, R, S2, D, iterations, nb_actions, gamma, disable_tqdm=False):
     nb_samples = S.shape[0]
@@ -361,8 +366,8 @@ def greedy_action(Q,s,nb_actions):
         Qsa.append(Q.predict(sa))
     return np.argmax(Qsa)
 
-gamma = 1
-nb_iter = 2000
+gamma = 0.98
+nb_iter = 50
 nb_actions = env.action_space.n
 nb_samples = 10000
 # print('Calculating Qfunctions...')
@@ -372,7 +377,14 @@ nb_samples = 10000
 ### fqi2 : nb_iter=10000, nb_samples=15000
 ### fqi3 : nb_iter=7500, nb_samples=15000
 ### fqi4 : nb_iter=2000, nb_samples=10000
-### fqi5: fqi4 with gamma = 1 istead of .9
+### fqi5: fqi4 with gamma = 1 istead of .9 => seems to lead to improvements
+### fqi6 : gamma = 1, nb samples = 10000, nb_iter = 100 (trying something new), and normalization of S and S2 => not very good
+### fqi7 : iter 2000 samples 10000 normalization + 0.1-greedy
+### fqi8 : fqi7 without 0.1-greedy at the execution, and gamma = 0.98, and applciation of renormalization to new observation
+### fqi9 : iter 7500 samples 10000 gamma = 0.98, renorm
+### fqi_kaggle_xgb/rf : gamma 0.98 iter 2000 samples 10000
+### fqi10 : fqi9 with iter 50 (easier to see impact of parameters)
+### fqi 11 : fqi 10 without renorm. trying dump compress=9
 
 class ProjectAgent:
 
@@ -383,15 +395,20 @@ class ProjectAgent:
         self.R = []
         self.S2 = []
         self.D = []
+        #renormalization parameters
+        self.mS = np.array((6,))
+        self.MS = np.array((6,))
 
     def collect_samples(self):
         print('Collecting samples...')
-        self.S,self.A,self.R,self.S2,self.D = collect_samples(env, nb_samples)
+        self.S,self.A,self.R,self.S2,self.D,self.mS,self.MS = collect_samples(env, nb_samples)
+        # self.S,self.A,self.R,self.S2,self.D = collect_samples(env, nb_samples)
         print('Samples collected.')
         print("nb of collected samples:", self.S.shape[0])
-        for i in range(3):
-            print("sample", i, "\n  state:", self.S[i], "\n  action:", self.A[i],
-                  "\n  reward:", self.R[i], "\n  next state:", self.S2[i], "\n terminal?", self.D[i])
+        # for i in range(3):
+        #     print("sample", i, "\n  state:", self.S[i], "\n  action:", self.A[i],
+        #           "\n  reward:", self.R[i], "\n  next state:", self.S2[i], "\n terminal?", self.D[i])
+        # print(f'renormalization parameters: [{self.mS},{self.MS}] for S and [{self.mS2},{self.MS2}] for S2')
 
     def train(self):
         print('Start training...')
@@ -399,16 +416,26 @@ class ProjectAgent:
         print('Training completed.')
 
     def act(self, observation, use_random=False):
-        if use_random and np.random.rand() < 0.1: #change here
-            return np.random.choice(self.nb_actions)
-
+        observation = (observation - np.array(self.mS)) / (np.array(self.MS) - np.array(self.mS))
+        # print('observation after preprocessing')
+        # print(observation)
         return greedy_action(self.Qfunctions[-1],observation,env.action_space.n)
 
     def save(self, path):
-        dump(self.Qfunctions, path)
+        # dump(self.Qfunctions, path)
+        data_to_save = {
+            'Qfunctions': self.Qfunctions,
+            'mS': self.mS,
+            'MS': self.MS
+        }
+        dump(data_to_save, path, compress=9)
 
     def load(self):
-        self.Qfunctions = load("model_save_fqi_5")
+        # self.Qfunctions = load("model_save_fqi_11")
+        loaded_data = load("model_save_fqi_10")
+        self.Qfunctions = loaded_data['Qfunctions']
+        self.mS = loaded_data['mS']
+        self.MS = loaded_data['MS']
 
 ###################################################################################
 ###################################################################################
