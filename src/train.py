@@ -8,6 +8,9 @@ import numpy as np
 # from tqdm import tqdm # comment this line before pushing
 from sklearn.ensemble import RandomForestRegressor
 from joblib import dump, load
+import xgboost as xgb
+import matplotlib.pyplot as plt
+from sklearn.ensemble import ExtraTreesRegressor
 
 env = TimeLimit(
     env=HIVPatient(domain_randomization=False), max_episode_steps=200
@@ -328,16 +331,16 @@ def collect_samples(env, horizon, disable_tqdm=False, print_done_states=False):
     D = np.array(D)
 
     # add a normalization step here for S and S2
-    # mS = np.min(S, axis=0)
-    # MS = np.max(S, axis=0)
-    # S_normalized = (S - mS) / (MS - mS)
-    # S2_normalized = (S2 - mS) / (MS - mS)
+    mS = np.min(S, axis=0)
+    MS = np.max(S, axis=0)
+    S_normalized = (S - mS) / (MS - mS)
+    S2_normalized = (S2 - mS) / (MS - mS)
 
-    return S, A, R, S2, D
-    # return S_normalized, A, R, S2_normalized, D, mS, MS
+    # return S, A, R, S2, D
+    return S_normalized, A, R, S2_normalized, D, mS, MS
 
 def rf_fqi(S, A, R, S2, D, iterations, nb_actions, gamma, disable_tqdm=False):
-    nb_samples = S.shape[0]
+    # nb_samples = S.shape[0]
     Qfunctions = []
     SA = np.append(S,A,axis=1)
     for iter in tqdm(range(iterations), disable=disable_tqdm):
@@ -348,28 +351,69 @@ def rf_fqi(S, A, R, S2, D, iterations, nb_actions, gamma, disable_tqdm=False):
             for a2 in range(nb_actions):
                 A2 = a2*np.ones((S.shape[0],1))
                 S2A2 = np.append(S2,A2,axis=1)
+                # dtest = xgb.DMatrix(S2A2)
                 Q2[:,a2] = Qfunctions[-1].predict(S2A2)
+                # Q2[:,a2] = Qfunctions[-1].predict(dtest)
             max_Q2 = np.max(Q2,axis=1)
             value = R + gamma*(1-D)*max_Q2
-        Q = RandomForestRegressor()
-        Q.fit(SA,value)
-        # Qfunctions.append(Q) 
-        # save memory: save only the last Qfunction
+
+        ############################################# xgboost
+        # dtrain = xgb.DMatrix(SA, label=value)
+        # params = {
+        #     'objective': 'reg:squarederror',
+        #     'eval_metric': 'rmse',
+        #     'max_depth': 3,
+        #     'eta': 0.1  
+        # }
+        # bst = xgb.train(params, dtrain, num_boost_round=10) 
+
+        # Save only the last Qfunction to save space
+        # Qfunctions = [bst]
+        # Qfunctions.append(bst)
+
+        ############################################# random forest
+        # Q = RandomForestRegressor()
+        # Q.fit(SA,value)
+        ## Qfunctions.append(Q) 
+        ## save memory: save only the last Qfunction
+        # Qfunctions = [Q]
+        # Value of an initial state across iterations
+        
+        ############################################# ExtraTrees
+        Q = ExtraTreesRegressor(n_estimators=100)
+        Q.fit(SA, value)
+        # # Qfunctions.append(Q)
         Qfunctions = [Q]
+            
+    # s0,_ = env.reset()
+    # Vs0 = np.zeros(nb_iter)
+    # for i in range(nb_iter):
+    #     Qs0a = []
+    #     for a in range(env.action_space.n):
+    #         s0a = np.append(s0,a).reshape(1, -1)
+    #         # s0a_d = xgb.DMatrix(s0a)
+    #         # Qs0a.append(Qfunctions[i].predict(s0a_d))
+    #         Qs0a.append(Qfunctions[i].predict(s0a))
+    #     Vs0[i] = np.max(Qs0a)
+    # plt.plot(Vs0)
     # return Qfunctions
-    return [Qfunctions[-1]] # return only the last Qfunction to save space
+        
+    return Qfunctions
+    # return [Qfunctions[-1]] # return only the last Qfunction to save space
 
 def greedy_action(Q,s,nb_actions):
     Qsa = []
     for a in range(nb_actions):
         sa = np.append(s,a).reshape(1, -1)
+        # sa_dmatrix = xgb.DMatrix(sa)
         Qsa.append(Q.predict(sa))
+        # Qsa.append(Q.predict(sa_dmatrix))
     return np.argmax(Qsa)
 
 gamma = 0.98
 nb_iter = 50
 nb_actions = env.action_space.n
-nb_samples = 10000
+nb_samples = 20000
 # print('Calculating Qfunctions...')
 # Qfunctions = rf_fqi(S, A, R, S2, D, max_episode, nb_actions, gamma)
 # print('Qfunctions...')
@@ -385,6 +429,11 @@ nb_samples = 10000
 ### fqi_kaggle_xgb/rf : gamma 0.98 iter 2000 samples 10000
 ### fqi10 : fqi9 with iter 50 (easier to see impact of parameters)
 ### fqi 11 : fqi 10 without renorm. trying dump compress=9
+### fqi 12 : trying xgb. gamme 0.98 iter 1000 samples 10000 max_depth 3 eta 0.1 num_boost_round 10 => not working, give up xgb
+### fqi 13 : trying extratrees. gamme 0.98 iter 2000 samples 10000 n_estimators 100
+### fqi 14 : trying extratrees. gamme 0.98 iter 2000 samples 10000 n_estimators 300 => no improvement
+### fqi 15 : samples 30k iter 100 gamma 0.99 extratrees n_estimators 100
+### fqi 16 : samples 30k iter 50 random forest
 
 class ProjectAgent:
 
@@ -424,7 +473,7 @@ class ProjectAgent:
     def save(self, path):
         # dump(self.Qfunctions, path)
         data_to_save = {
-            'Qfunctions': self.Qfunctions,
+            'Qfunctions': self.Qfunctions[-1],
             'mS': self.mS,
             'MS': self.MS
         }
@@ -432,7 +481,7 @@ class ProjectAgent:
 
     def load(self):
         # self.Qfunctions = load("model_save_fqi_11")
-        loaded_data = load("model_save_fqi_10")
+        loaded_data = load("src/model_save_fqi_17")
         self.Qfunctions = loaded_data['Qfunctions']
         self.mS = loaded_data['mS']
         self.MS = loaded_data['MS']
